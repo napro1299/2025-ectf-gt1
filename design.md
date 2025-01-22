@@ -40,4 +40,9 @@ Not valid:
 * Timestamp: 1 (REJECTED)
 
 # Our Design
+Since shared secrets are embedded in the decoder during the build process, we can store keys used to decrypt encoded frames.
 
+Tools at our disposal:
+* AES256 for symmetric encryption
+* SHA256 or Blake2 (faster) for checksums and verification
+* Public key cryptography RSA or ECDH (Elliptic Curve Diffie-Helman) if needed

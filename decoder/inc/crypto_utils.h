@@ -30,6 +30,11 @@ void sha256_hash(uint8_t *in, size_t len, uint8_t *digest);
  */
 void hmac_digest(uint8_t *in, size_t len, uint8_t *key, size_t key_size, uint8_t *digest);
 
+/**
+ * Verifies HMAC signature.
+ * 
+ * @return 0 on success, -1 on failure
+ */
 int hmac_verify(uint8_t *data, size_t len, uint8_t *hmac, uint8_t *key, size_t key_size) ;
 
 #endif

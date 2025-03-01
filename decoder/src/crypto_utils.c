@@ -5,6 +5,8 @@
 #include <wolfssl/wolfcrypt/blake2.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 
+#define HMAC_LEN    SHA256_DIGEST_SIZE
+
 /**
  * Verify and unpad bytes. 
  * 
@@ -83,9 +85,27 @@ int decrypt_cbc_sym(uint8_t *ciphertext, size_t len, uint8_t *key, uint8_t *iv, 
     return 0;
 }
 
-void blake2s_hash(uint8_t *in, size_t len, uint8_t *digest) {
-    Blake2s b2s;
-    wc_InitBlake2s(&b2s, 32);
-    wc_Blake2sUpdate(&b2s, in, len);
-    wc_Blake2sFinal(&b2s, digest, 32);
+void sha256_hash(uint8_t *in, size_t len, uint8_t *digest) {
+    Sha sha;
+    wc_InitSha256(&sha);
+    wc_Sha256Update(&sha, in, len);
+    wc_Sha256Final(&sha, digest);
+}
+
+void hmac_digest(uint8_t *in, size_t len, uint8_t *key, size_t key_size, uint8_t *digest) {
+    Hmac hmac;
+    wc_HmacSetKey(&hmac, SHA256, key, key_size);
+    wc_HmacUpdate(&hmac, in, len);
+    wc_HmacFinal(&hmac, digest);
+}
+
+int hmac_verify(uint8_t *data, size_t len, uint8_t *hmac, uint8_t *key, size_t key_size) {
+    char our_hmac[HMAC_LEN];
+
+    hmac_digest(data, len, key, key_size, our_hmac);
+
+    if (memcmp(hmac, our_hmac, HMAC_LEN) != 0)
+        return -1;
+
+    return 0;
 }

@@ -23,6 +23,13 @@ int encrypt_cbc_sym(uint8_t *plaintext, size_t len, uint8_t *key, uint8_t *iv, u
  */
 int decrypt_cbc_sym(uint8_t *ciphertext, size_t len, uint8_t *key, uint8_t *iv, uint8_t *plaintext, int *pt_len);
 
-void blake2s_hash(uint8_t *in, size_t len, uint8_t *digest);
+void sha256_hash(uint8_t *in, size_t len, uint8_t *digest);
+
+/**
+ * Generate HMAC-SHA-256 digest.
+ */
+void hmac_digest(uint8_t *in, size_t len, uint8_t *key, size_t key_size, uint8_t *digest);
+
+int hmac_verify(uint8_t *data, size_t len, uint8_t *hmac, uint8_t *key, size_t key_size) ;
 
 #endif

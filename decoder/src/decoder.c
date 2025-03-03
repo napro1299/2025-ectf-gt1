@@ -114,6 +114,10 @@ typedef struct {
 
 // This is used to track decoder subscriptions
 flash_entry_t decoder_status;
+// This tracks the last timestamp for emergency channel
+static timestamp_t last_emergency_timestamp = 0;
+// This holds the last timestamp for each channel. 
+static timestamp_t last_frame_timestamps[MAX_CHANNEL_COUNT] = {0}
 
 // The global secrets
 static const secrets_t secrets = {
@@ -247,6 +251,55 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
         /* The reference design doesn't need any extra work to decode, but your design likely will.
          *  Do any extra decoding here before returning the result to the host. */
 
+        // for emergency channels
+        // also makes sure to enforce monotonically increasing timestamps
+        if (channel == EMERGENCY_CHANNEL) {
+            // if timestamp <= last_emergency_timestamp, then return with an error
+            if (timestamp <= last_emergency_timestamp) {
+                print_error("Rejected emergency channel frame: timestamp not strictly increasing\n")
+                return -1;
+            }   
+            // else, update the emergency channel's last timestamp
+            last_emergency_timestamp = timestamp;
+        } else {
+            // for non-emergency channels
+            // find index in the subscription array
+            int channel_index = -1;
+            for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
+                if (decoder_status.subscribed_channels[i].active && decoder_status.subscribed_channels[i].id == channel) {
+                    channel_index = i;
+                    break;
+                }
+            }
+            // returns error if there isnt a valid subscription for the channel
+            if (channel_index == -1) {
+                print_error("Subscription not found for channel\n");
+                return -1;
+            }
+
+            // check if frame timestamp is within the subscription window
+            timestamp_t subscription_start = decoder_status.subscribed_channels[channel_index].start_timestamp;
+            timestamp_t subscription_end = decoder_status.subscribed_channels[channel_index].end_timestamp;
+            if (timestamp < subscription_start || timestamp > subscription_end) {
+                sprintf(
+                    output_buf,
+                    "Frame timestamp is outside of the subscription window.",
+                    timestamp, subscription_start, subscription_end);
+                print_error(output_buf);
+                return -1;
+            }
+            // enforce strictly monotonically increasing timestamps
+            if (timestamp <= last_frame_timestamps[channel_index]) {
+                sprintf(output_buf,
+                        "Frame rejected: timestamp is not increasing",
+                        channel, timestamp, last_frame_timestamps[channel_index]);
+                print_error(output_buf);
+                return -1;
+            }
+            last_frame_timestamps[channel_index] = timestamp;
+        }
+        // Sanity check to check if timestamps working
+        print_debug("Subscription and ordering valid\n")
 
         write_packet(DECODE_MSG, new_frame->data, frame_size);
         return 0;

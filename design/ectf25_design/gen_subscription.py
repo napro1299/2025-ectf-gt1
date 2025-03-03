@@ -16,7 +16,7 @@ import os
 import base64
 from pathlib import Path
 import struct
-from encoder import channel_session_keys
+from encoder import get_channel_session_key
 
 from loguru import logger
 from cryptography.hazmat.primitives import hashes
@@ -50,10 +50,7 @@ def gen_subscription(
     hmac_auth_key = base64.b64decode(secrets["hmac_auth_key"])
     subupdate_salt = base64.b64decode(secrets["subupdate_salt"])
 
-    if channel_session_keys[channel] is None:
-        channel_session_keys[channel] = os.urandom(16)
-
-    channel_key = channel_session_keys[channel]
+    channel_key = get_channel_session_key(channel)
 
     # Make subupdate key: hash(decoder_id + salt)
     def make_subupdate_key(decoder_id: int):

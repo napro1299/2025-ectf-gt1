@@ -14,15 +14,22 @@ import argparse
 import struct
 import json
 import os
+import base64
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives import hashes, hmac
 
-channel_session_keys: list[bytes] = []
+channel_session_keys = {}
 
 CHANNEL_SESSION_LIFETIME = 30 # seconds
+
+def get_channel_session_key(channel: int) -> bytes:
+    if channel not in channel_session_keys or channel_session_keys[channel] is None:
+        channel_session_keys[channel] = os.urandom(16)
+
+    return channel_session_keys[channel]
 
 class Encoder:
     def __init__(self, secrets: bytes):
@@ -38,8 +45,8 @@ class Encoder:
         # Load the json of the secrets file
         secrets = json.loads(secrets)
 
-        self.hmac_auth_key = secrets["hmac_auth_key"]
-        self.subupdate_salt = secrets["subupdate_salt"]
+        self.hmac_auth_key = base64.b64decode(secrets["hmac_auth_key"])
+        self.subupdate_salt = base64.b64decode(secrets["subupdate_salt"])
 
     def encode(self, channel: int, frame: bytes, timestamp: int) -> bytes:
         """The frame encoder function
@@ -60,7 +67,7 @@ class Encoder:
         :returns: The encoded frame, which will be sent to the Decoder
         """
 
-        channel_key = channel_session_keys[channel]
+        channel_key = get_channel_session_key(channel)
 
         iv = os.urandom(16) # Initialization vector introduces randomness
 
@@ -84,7 +91,9 @@ class Encoder:
 
         hmac_signature = h.finalize()
 
-        body = struct.pack("<IQ", channel)
+        channel_bytes = struct.pack("<I", channel)
+
+        return channel_bytes + hmac_signature + iv + encrypted_body
 
 
 def main():

@@ -41,7 +41,7 @@ def gen_secrets(channels: list[int]) -> bytes | bytes:
     secrets_json = {
         "channels": channels,
         "subupdate_salt": base64.b64encode(os.urandom(16)).decode(),   # 128-bit salt
-        "hmac_key": base64.b64encode(os.urandom(32)).decode()          # Shared MAC key for verifying authenticity
+        "hmac_auth_key": base64.b64encode(os.urandom(32)).decode()          # Shared MAC key for verifying authenticity
     }
 
     # NOTE: if you choose to use JSON for your file type, you will not be able to

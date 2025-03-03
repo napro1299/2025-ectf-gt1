@@ -25,32 +25,19 @@
 #include "simple_uart.h"
 
 #include "crypto_utils.h"
+#include "global.secrets"
 
-/* Code between this #ifdef and the subsequent #endif will
-*  be ignored by the compiler if CRYPTO_EXAMPLE is not set in
-*  the projectk.mk file. */
-#ifdef CRYPTO_EXAMPLE
-/* The simple crypto example included with the reference design is intended
-*  to be an example of how you *may* use cryptography in your design. You
-*  are not limited nor required to use this interface in your design. It is
-*  recommended for newer teams to start by only using the simple crypto
-*  library until they have a working design. */
-#include "simple_crypto.h"
-#endif  //CRYPTO_EXAMPLE
-
-/**********************************************************
- ******************* PRIMITIVE TYPES **********************
- **********************************************************/
-
+/**
+ * Primitive types
+ */
 #define timestamp_t uint64_t
 #define channel_id_t uint32_t
 #define decoder_id_t uint32_t
 #define pkt_len_t uint16_t
 
-/**********************************************************
- *********************** CONSTANTS ************************
- **********************************************************/
-
+/**
+ * Constants
+ */
 #define MAX_CHANNEL_COUNT 8
 #define EMERGENCY_CHANNEL 0
 #define FRAME_SIZE 64
@@ -58,9 +45,9 @@
 // This is a canary value so we can confirm whether this decoder has booted before
 #define FLASH_FIRST_BOOT 0xDEADBEEF
 
-/**********************************************************
- ********************* STATE MACROS ***********************
- **********************************************************/
+/**
+ * State Macros
+ */
 
 // Calculate the flash address where we will store channel info as the 2nd to last page available
 #define FLASH_STATUS_ADDR ((MXC_FLASH_MEM_BASE + MXC_FLASH_MEM_SIZE) - (2 * MXC_FLASH_PAGE_SIZE))
@@ -99,9 +86,15 @@ typedef struct {
 
 #pragma pack(pop) // Tells the compiler to resume padding struct members
 
-/**********************************************************
- ******************** TYPE DEFINITIONS ********************
- **********************************************************/
+/**
+ * Type definitions
+ */
+
+typedef struct {
+    uint8_t subupdate_salt[16];
+    uint8_t hmac_key[32];
+} secrets_t;
+
 
 typedef struct {
     bool active;
@@ -115,17 +108,23 @@ typedef struct {
     channel_status_t subscribed_channels[MAX_CHANNEL_COUNT];
 } flash_entry_t;
 
-/**********************************************************
- ************************ GLOBALS *************************
- **********************************************************/
+/**
+ * Globals
+ */
 
 // This is used to track decoder subscriptions
 flash_entry_t decoder_status;
 
+// The global secrets
+static const secrets_t secrets = {
+    .subupdate_salt = SECRET_SUBUPDATE_SALT,
+    .hmac_key = SECRET_HMAC_KEY,
+};
 
-/**********************************************************
- ******************* UTILITY FUNCTIONS ********************
- **********************************************************/
+
+/**
+ * Utility functions
+ */
 
 /** @brief Checks whether the decoder is subscribed to a given channel
  *
@@ -239,7 +238,6 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
     frame_size = pkt_len - (sizeof(new_frame->channel) + sizeof(new_frame->timestamp));
     channel = new_frame->channel;
 
-    // The reference design doesn't use the timestamp, but you may want to in your design
     timestamp_t timestamp = new_frame->timestamp;
 
     // Check that we are subscribed to the channel...
@@ -308,7 +306,7 @@ void init() {
 /* Code between this #ifdef and the subsequent #endif will
 *  be ignored by the compiler if CRYPTO_EXAMPLE is not set in
 *  the projectk.mk file. */
-#ifdef CRYPTO_EXAMPLE
+#if 0
 void crypto_example(void) {
     // Example of how to utilize included simple_crypto.h
 

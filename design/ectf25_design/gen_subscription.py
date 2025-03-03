@@ -12,11 +12,21 @@ Copyright: Copyright (c) 2025 The MITRE Corporation
 
 import argparse
 import json
+import os
+import base64
 from pathlib import Path
 import struct
+from encoder import channel_session_keys
 
 from loguru import logger
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives import hashes, hmac
 
+# Test: 
+# 
+# ../.venv/bin/python3.11 -m ectf25_design.gen_subscription ../global.secrets/secrets.json subscription.bin 0xdeadbeef 0 100 1 
 
 def gen_subscription(
     secrets: bytes, device_id: int, start: int, end: int, channel: int
@@ -37,13 +47,55 @@ def gen_subscription(
     # Load the json of the secrets file
     secrets = json.loads(secrets)
 
-    # You can use secrets generated using `gen_secrets` here like:
-    # secrets["some_secrets"]
-    # Which would return "EXAMPLE" in the reference design.
-    # Please note that the secrets are READ ONLY at this sage!
+    hmac_auth_key = base64.b64decode(secrets["hmac_auth_key"])
+    subupdate_salt = base64.b64decode(secrets["subupdate_salt"])
 
-    # Pack the subscription. This will be sent to the decoder with ectf25.tv.subscribe
-    return struct.pack("<IQQI", device_id, start, end, channel)
+    if channel_session_keys[channel] is None:
+        channel_session_keys[channel] = os.urandom(16)
+
+    channel_key = channel_session_keys[channel]
+
+    # Make subupdate key: hash(decoder_id + salt)
+    def make_subupdate_key(decoder_id: int):
+        prehash = decoder_id.to_bytes(4, 'big') + subupdate_salt
+        
+        hasher = hashes.Hash(hashes.SHA256())        
+        hasher.update(prehash)
+
+        return hasher.finalize()
+    
+    subupdate_key = make_subupdate_key(device_id)
+
+    # Encrypt body using AES-CBC
+    # We don't use AES-GCM because the encryption + authentication uses the same key, this is not a safe practice.
+    # We will AES-CBC + HMAC separately 
+    iv = os.urandom(16) # Initialization vector introduces randomness
+
+    aes_cipher = Cipher(algorithms.AES(subupdate_key), modes.CBC(iv))
+
+    body = struct.pack("<IQQI", device_id, start, end, channel)
+    body = body + channel_key
+
+    # Pad to make data multiple of 16 bytes (block size)
+    padder = padding.PKCS7(128).padder()
+    padded_body = padder.update(body) + padder.finalize()
+
+    # Encrypt padded data
+    encryptor = aes_cipher.encryptor()
+    encrypted_body = encryptor.update(padded_body) + encryptor.finalize()
+
+    # Compute HMAC and prepend to body
+    h = hmac.HMAC(hmac_auth_key, hashes.SHA256())
+
+    h.update(encrypted_body)
+
+    hmac_signature = h.finalize()
+
+    # print(f"HMAC: {hmac_signature.hex()}")
+    # print(f"IV: {iv.hex()}")
+    # print(f"Body: {encrypted_body.hex()}")
+
+    return hmac_signature + iv + encrypted_body 
 
 
 def parse_args():

@@ -14,6 +14,9 @@ import argparse
 import struct
 import json
 
+channel_session_keys: list[bytes] = []
+
+CHANNEL_SESSION_LIFETIME = 30 # seconds
 
 class Encoder:
     def __init__(self, secrets: bytes):
@@ -29,9 +32,8 @@ class Encoder:
         # Load the json of the secrets file
         secrets = json.loads(secrets)
 
-        # Load the example secrets for use in Encoder.encode
-        # This will be "EXAMPLE" in the reference design"
-        self.some_secrets = secrets["some_secrets"]
+        self.hmac_auth_key = secrets["hmac_auth_key"]
+        self.subupdate_salt = secrets["subupdate_salt"]
 
     def encode(self, channel: int, frame: bytes, timestamp: int) -> bytes:
         """The frame encoder function
@@ -51,8 +53,8 @@ class Encoder:
 
         :returns: The encoded frame, which will be sent to the Decoder
         """
-        # TODO: encode the satellite frames so that they meet functional and
-        #  security requirements
+
+
 
         return struct.pack("<IQ", channel, timestamp) + frame
 

@@ -13,6 +13,12 @@ Copyright: Copyright (c) 2025 The MITRE Corporation
 import argparse
 import struct
 import json
+import os
+
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives import hashes, hmac
 
 channel_session_keys: list[bytes] = []
 
@@ -54,9 +60,31 @@ class Encoder:
         :returns: The encoded frame, which will be sent to the Decoder
         """
 
+        channel_key = channel_session_keys[channel]
 
+        iv = os.urandom(16) # Initialization vector introduces randomness
 
-        return struct.pack("<IQ", channel, timestamp) + frame
+        aes_cipher = Cipher(algorithms.AES(channel_key), modes.CBC(iv))
+
+        # timestamp + frame
+        frame_data = struct.pack("<Q", timestamp) + frame
+
+        # Pad to make data multiple of 16 bytes (block size)
+        padder = padding.PKCS7(128).padder()
+        padded_body = padder.update(frame_data) + padder.finalize()
+
+        # Encrypt padded data
+        encryptor = aes_cipher.encryptor()
+        encrypted_body = encryptor.update(padded_body) + encryptor.finalize()
+
+        # Compute HMAC and prepend to body
+        h = hmac.HMAC(self.hmac_auth_key, hashes.SHA256())
+
+        h.update(encrypted_body)
+
+        hmac_signature = h.finalize()
+
+        body = struct.pack("<IQ", channel)
 
 
 def main():

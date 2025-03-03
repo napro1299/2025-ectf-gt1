@@ -86,7 +86,7 @@ int decrypt_cbc_sym(uint8_t *ciphertext, size_t len, uint8_t *key, uint8_t *iv, 
 }
 
 void sha256_hash(uint8_t *in, size_t len, uint8_t *digest) {
-    Sha sha;
+    wc_Sha256 sha;
     wc_InitSha256(&sha);
     wc_Sha256Update(&sha, in, len);
     wc_Sha256Final(&sha, digest);
@@ -100,7 +100,7 @@ void hmac_digest(uint8_t *in, size_t len, uint8_t *key, size_t key_size, uint8_t
 }
 
 int hmac_verify(uint8_t *data, size_t len, uint8_t *hmac, uint8_t *key, size_t key_size) {
-    char our_hmac[HMAC_LEN];
+    uint8_t our_hmac[HMAC_LEN];
 
     hmac_digest(data, len, key, key_size, our_hmac);
 

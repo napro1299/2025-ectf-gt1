@@ -13,12 +13,13 @@ Copyright: Copyright (c) 2025 The MITRE Corporation
 import argparse
 import json
 import os
+import base64
 from pathlib import Path
 
 from loguru import logger
 
 
-def gen_secrets(channels: list[int]) -> bytes:
+def gen_secrets(channels: list[int]) -> bytes | bytes:
     """Generate the contents secrets file
 
     This will be passed to the Encoder, ectf25_design.gen_subscription, and the build
@@ -36,16 +37,17 @@ def gen_secrets(channels: list[int]) -> bytes:
     # Create the secrets object
     # You can change this to generate any secret material
     # The secrets file will never be shared with attackers
-    secrets = {
+
+    secrets_json = {
         "channels": channels,
-        "subupdate_salt": os.urandom(16),   # 128-bit salt
-        "hmac_key": os.urandom(32)          # Shared MAC key for verifying authenticity
+        "subupdate_salt": base64.b64encode(os.urandom(16)).decode(),   # 128-bit salt
+        "hmac_key": base64.b64encode(os.urandom(32)).decode()          # Shared MAC key for verifying authenticity
     }
 
     # NOTE: if you choose to use JSON for your file type, you will not be able to
     # store binary data, and must either use a different file type or encode the
     # binary data to hex, base64, or another type of ASCII-only encoding
-    return json.dumps(secrets).encode()
+    return json.dumps(secrets_json).encode()
 
 
 def parse_args():

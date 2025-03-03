@@ -6,6 +6,10 @@
 
 !device/lib
 
+# Project specific
+global.secrets/
+decoder/inc/global.secrets
+
 ## Begin Generic .gitignore ##
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,c,c++,git,pycharm

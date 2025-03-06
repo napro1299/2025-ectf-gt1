@@ -17,12 +17,12 @@ GLOBAL_SECRET := ../global.secrets/secrets.json
 
 GLOBAL_SECRETS_CHANNELS := $(shell python3 -c 'import json; print("{" + ", ".join(map(str, json.load(open("$(GLOBAL_SECRET)"))["channels"])) + "}")')
 GLOBAL_SECRETS_SUBUPDATE_SALT := $(shell python3 -c 'import json; print(json.load(open("$(GLOBAL_SECRET)"))["subupdate_salt"])')
-GLOBAL_SECRETS_HMAC_KEY := $(shell python3 -c 'import json; print(json.load(open("$(GLOBAL_SECRET)"))["hmac_key"])')
+GLOBAL_SECRETS_HMAC_AUTH_KEY := $(shell python3 -c 'import json; print(json.load(open("$(GLOBAL_SECRET)"))["hmac_auth_key"])')
 
 # Logging the secrets for debugging purposes (bad practice, but attackers wont have access)
 $(info GLOBAL_SECRETS_CHANNELS=$(GLOBAL_SECRETS_CHANNELS))
 $(info GLOBAL_SECRETS_SUBUPDATE_SALT=$(GLOBAL_SECRETS_SUBUPDATE_SALT))
-$(info GLOBAL_SECRETS_HMAC_KEY=$(GLOBAL_SECRETS_HMAC_KEY))
+$(info GLOBAL_SECRETS_HMAC_AUTH_KEY=$(GLOBAL_SECRETS_HMAC_AUTH_KEY))
 
 # To enable WolfSSL features that we use
 PROJ_CFLAGS += -DHAVE_PKCS7
@@ -35,7 +35,7 @@ inc/global.secrets: $(GLOBAL_SECRET)
 	@echo "#define GTONE_SECRET_H" >> $@
 	@echo "#define SECRET_CHANNELS $(GLOBAL_SECRETS_CHANNELS)" >> $@
 	@python3 -c 'import base64, sys; data = base64.b64decode(sys.argv[1]); print("#define SECRET_SUBUPDATE_SALT { " + ", ".join("0x{:02x}".format(b) for b in data) + " }")' $(GLOBAL_SECRETS_SUBUPDATE_SALT) >> $@
-	@python3 -c 'import base64, sys; data = base64.b64decode(sys.argv[1]); print("#define SECRET_HMAC_KEY { " + ", ".join("0x{:02x}".format(b) for b in data) + " }")' $(GLOBAL_SECRETS_HMAC_KEY) >> $@
+	@python3 -c 'import base64, sys; data = base64.b64decode(sys.argv[1]); print("#define SECRET_HMAC_AUTH_KEY { " + ", ".join("0x{:02x}".format(b) for b in data) + " }")' $(GLOBAL_SECRETS_HMAC_AUTH_KEY) >> $@
 	@echo "#endif // GTONE_SECRET_H" >> $@
 
 # This example is only compatible with the FTHR board,

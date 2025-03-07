@@ -27,6 +27,12 @@
 #include "crypto_utils.h"
 #include "global.secrets"
 
+#ifndef DECODER_ID
+#error "DECODER_ID is not defined"
+#endif
+
+#define DEVICE_ID ((decoder_id_t) DECODER_ID)
+
 /**
  * Primitive types
  */
@@ -34,6 +40,21 @@
 #define channel_id_t uint32_t
 #define decoder_id_t uint32_t
 #define pkt_len_t uint16_t
+
+// HMAC-SHA256 signature
+typedef struct {
+    uint8_t bytes[32];
+} hmac_sig_t;
+
+// 128-bit IV
+typedef struct {
+    uint8_t bytes[16];
+} iv_t;
+
+// 128-bit channel key
+typedef struct {
+    uint8_t bytes[16];
+} channel_key_t;
 
 /**
  * Constants
@@ -44,6 +65,7 @@
 #define DEFAULT_CHANNEL_TIMESTAMP 0xFFFFFFFFFFFFFFFF
 // This is a canary value so we can confirm whether this decoder has booted before
 #define FLASH_FIRST_BOOT 0xDEADBEEF
+#define HASH_SIZE 32
 
 /**
  * State Macros
@@ -60,17 +82,35 @@
 #pragma pack(push, 1) // Tells the compiler not to pad the struct members
 // for more information on what struct padding does, see:
 // https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Structure-Layout.html
+
 typedef struct {
-    channel_id_t channel;
     timestamp_t timestamp;
     uint8_t data[FRAME_SIZE];
+    char padding[8];
+} frame_packet_payload_t;
+
+typedef struct {
+    channel_id_t channel;
+    hmac_sig_t hmac_signature;
+    iv_t iv;
+    uint8_t encrypted_data[sizeof(frame_packet_payload_t)];
 } frame_packet_t;
 
 typedef struct {
-    decoder_id_t decoder_id;
-    timestamp_t start_timestamp;
-    timestamp_t end_timestamp;
+    decoder_id_t device_id;
+    timestamp_t start;
+    timestamp_t end;
     channel_id_t channel;
+    channel_key_t channel_key;
+    char padding[8];
+} subscription_update_payload_t;
+
+typedef struct {
+    hmac_sig_t hmac_signature;
+    iv_t iv;
+
+    // device_id, start, end, channel, channel key
+    uint8_t encrypted_data[sizeof(subscription_update_payload_t)];
 } subscription_update_packet_t;
 
 typedef struct {
@@ -92,15 +132,15 @@ typedef struct {
 
 typedef struct {
     uint8_t subupdate_salt[16];
-    uint8_t hmac_key[32];
+    uint8_t hmac_auth_key[32];
 } secrets_t;
-
 
 typedef struct {
     bool active;
     channel_id_t id;
     timestamp_t start_timestamp;
     timestamp_t end_timestamp;
+    channel_key_t key;
 } channel_status_t;
 
 typedef struct {
@@ -117,14 +157,13 @@ flash_entry_t decoder_status;
 // This tracks the last timestamp for emergency channel
 static timestamp_t last_emergency_timestamp = 0;
 // This holds the last timestamp for each channel. 
-static timestamp_t last_frame_timestamps[MAX_CHANNEL_COUNT] = {0}
+static timestamp_t last_frame_timestamps[MAX_CHANNEL_COUNT] = {0};
 
 // The global secrets
 static const secrets_t secrets = {
     .subupdate_salt = SECRET_SUBUPDATE_SALT,
-    .hmac_key = SECRET_HMAC_KEY,
+    .hmac_auth_key = SECRET_HMAC_AUTH_KEY,
 };
-
 
 /**
  * Utility functions
@@ -195,7 +234,39 @@ int list_channels() {
 int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update) {
     int i;
 
-    if (update->channel == EMERGENCY_CHANNEL) {
+    hmac_sig_t hmac_sig = update->hmac_signature;
+    enc_body_t enc_body = update->encrypted_body;
+    int hmac_status = hmac_verify(update->encrypted_data, sizeof(update->encrypted_data), update->hmac_signature.bytes, secrets.hmac_auth_key, sizeof(secrets.hmac_auth_key));
+    
+    if (hmac_status != 0) {
+        STATUS_LED_RED();
+        print_error("Failed to update subscription - HMAC verification failed\n");
+        return -1;
+    }
+
+    char prehash[sizeof(decoder_id_t) + sizeof(secrets.subupdate_salt)];
+    char subupdate_key[HASH_SIZE];
+    subscription_update_payload_t payload;
+    
+    // IMPORTANT - Zero out stack variables to prevent stack-based attacks!!!
+#define ZERO_PRIVATES() do { \
+    memset(prehash, 0, sizeof(prehash)); \
+    memset(subupdate_key, 0, sizeof(subupdate_key)); \
+    memset(&payload, 0, sizeof(subscription_update_payload_t)); \
+} while (0)
+
+    ((decoder_id_t *)prehash)[0] = DEVICE_ID;
+    memcpy(prehash + sizeof(decoder_id_t), secrets.subupdate_salt, sizeof(secrets.subupdate_salt));
+
+    // Hash the prehash to get the key
+    sha256_hash(prehash, sizeof(prehash), subupdate_key);
+
+    // Decrypt the sub update
+    int payload_size;
+    decrypt_cbc_sym(update->encrypted_data, sizeof(subscription_update_payload_t), subupdate_key, update->iv.bytes, (uint8_t *)&payload, &payload_size);
+
+    if (payload->channel == EMERGENCY_CHANNEL) {
+        ZERO_PRIVATES();
         STATUS_LED_RED();
         print_error("Failed to update subscription - cannot subscribe to emergency channel\n");
         return -1;
@@ -203,21 +274,27 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
 
     // Find the first empty slot in the subscription array
     for (i = 0; i < MAX_CHANNEL_COUNT; i++) {
-        if (decoder_status.subscribed_channels[i].id == update->channel || !decoder_status.subscribed_channels[i].active) {
+        if (decoder_status.subscribed_channels[i].id == payload->channel || !decoder_status.subscribed_channels[i].active) {
+            decoder_status.subscribed_channels[i].id = payload->channel;
+            decoder_status.subscribed_channels[i].start_timestamp = payload->start;
+            decoder_status.subscribed_channels[i].end_timestamp = payload->end;
             decoder_status.subscribed_channels[i].active = true;
-            decoder_status.subscribed_channels[i].id = update->channel;
-            decoder_status.subscribed_channels[i].start_timestamp = update->start_timestamp;
-            decoder_status.subscribed_channels[i].end_timestamp = update->end_timestamp;
+            decoder_status.subscribed_channels[i].key = payload->channel_key;
+
             break;
         }
     }
 
     // If we do not have any room for more subscriptions
     if (i == MAX_CHANNEL_COUNT) {
+        ZERO_PRIVATES();
         STATUS_LED_RED();
         print_error("Failed to update subscription - max subscriptions installed\n");
         return -1;
     }
+
+    ZERO_PRIVATES();
+#undef ZERO_PRIVATES
 
     flash_simple_erase_page(FLASH_STATUS_ADDR);
     flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
@@ -241,8 +318,6 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
     // Frame size is the size of the packet minus the size of non-frame elements
     frame_size = pkt_len - (sizeof(new_frame->channel) + sizeof(new_frame->timestamp));
     channel = new_frame->channel;
-
-    timestamp_t timestamp = new_frame->timestamp;
 
     // Check that we are subscribed to the channel...
     print_debug("Checking subscription\n");
@@ -356,45 +431,6 @@ void init() {
     }
 }
 
-/* Code between this #ifdef and the subsequent #endif will
-*  be ignored by the compiler if CRYPTO_EXAMPLE is not set in
-*  the projectk.mk file. */
-#if 0
-void crypto_example(void) {
-    // Example of how to utilize included simple_crypto.h
-
-    // This string is 16 bytes long including null terminator
-    // This is the block size of included symmetric encryption
-    char *data = "Crypto Example!";
-    uint8_t ciphertext[BLOCK_SIZE];
-    uint8_t key[KEY_SIZE];
-    uint8_t hash_out[HASH_SIZE];
-    uint8_t decrypted[BLOCK_SIZE];
-
-    char output_buf[128] = {0};
-
-    // Zero out the key
-    bzero(key, BLOCK_SIZE);
-
-    // Encrypt example data and print out
-    encrypt_sym((uint8_t*)data, BLOCK_SIZE, key, ciphertext);
-    print_debug("Encrypted data: \n");
-    print_hex_debug(ciphertext, BLOCK_SIZE);
-
-    // Hash example encryption results
-    hash(ciphertext, BLOCK_SIZE, hash_out);
-
-    // Output hash result
-    print_debug("Hash result: \n");
-    print_hex_debug(hash_out, HASH_SIZE);
-
-    // Decrypt the encrypted message and print out
-    decrypt_sym(ciphertext, BLOCK_SIZE, key, decrypted);
-    sprintf(output_buf, "Decrypted message: %s\n", decrypted);
-    print_debug(output_buf);
-}
-#endif  //CRYPTO_EXAMPLE
-
 /**********************************************************
  *********************** MAIN LOOP ************************
  **********************************************************/
@@ -405,7 +441,7 @@ int main(void) {
     msg_type_t cmd;
     int result;
     uint16_t pkt_len;
-
+    
     // initialize the device
     init();
 

@@ -13,16 +13,17 @@ Copyright: Copyright (c) 2025 The MITRE Corporation
 import argparse
 import json
 import os
+import sys
 import base64
 from pathlib import Path
 import struct
-from encoder import get_channel_session_key
 
 from loguru import logger
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives import hashes, hmac
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 # Test: 
 # 
@@ -49,9 +50,17 @@ def gen_subscription(
 
     hmac_auth_key = base64.b64decode(secrets["hmac_auth_key"])
     subupdate_salt = base64.b64decode(secrets["subupdate_salt"])
+    channel_salt = base64.b64decode(secrets["channel_salt"])
 
-    channel_key = get_channel_session_key(channel)
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=16,
+        salt=channel_salt,
+        iterations=100000,
+    )
 
+    channel_key = kdf.derive(channel.to_bytes(4, byteorder='big'))
+    
     # Make subupdate key: hash(decoder_id + salt)
     def make_subupdate_key(decoder_id: int):
         prehash = decoder_id.to_bytes(4, 'big') + subupdate_salt

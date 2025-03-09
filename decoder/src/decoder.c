@@ -258,9 +258,9 @@ int list_channels() {
 */
 int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update) {
     int i;
+    char buf[128] = {0};
 
     int hmac_status = hmac_verify(update->encrypted_data, sizeof(update->encrypted_data), update->hmac_signature.bytes, secrets.hmac_auth_key, sizeof(secrets.hmac_auth_key));
-    
     if (hmac_status != 0) {
         STATUS_LED_RED();
         print_error("Failed to update subscription - HMAC verification failed\n");
@@ -283,6 +283,7 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
 
     // Hash the prehash to get the key
     sha256_hash(prehash, sizeof(prehash), subupdate_key);
+    print_debug("UPDATE subscription\n");
 
     // Decrypt the sub update
     int payload_size;
@@ -294,7 +295,8 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
         // TODO: Could possibly lead to padding oracle attack - NEVER return whether padding failed.
         // However, they can still see how long it takes and determine if it was padding failure
         // But this might not be a problem since our messages have MACs, e.g. MAC fails first
-        print_error("Failed to update subscription - decryption failed\n");
+        sprintf(buf, "Failed to update subscription - decryption failed: %d\n", result);
+        print_error(buf);
         return -1;
     }
 
@@ -340,6 +342,7 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
     flash_simple_write(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));
     // Success message with an empty body
     write_packet(SUBSCRIBE_MSG, NULL, 0);
+    print_debug("Subscription successfully decoded!\n");
     return 0;
 }
 

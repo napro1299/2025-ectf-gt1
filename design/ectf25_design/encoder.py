@@ -21,14 +21,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives import hashes, hmac
-
-channel_session_keys = {}
-
-def get_channel_session_key(channel: int) -> bytes:
-    if channel not in channel_session_keys or channel_session_keys[channel] is None:
-        channel_session_keys[channel] = os.urandom(16)
-
-    return channel_session_keys[channel]
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 class Encoder:
     def __init__(self, secrets: bytes):
@@ -47,6 +40,21 @@ class Encoder:
         self.hmac_auth_key = base64.b64decode(secrets["hmac_auth_key"])
         self.subupdate_salt = base64.b64decode(secrets["subupdate_salt"])
         self.emergency_key = base64.b64decode(secrets["emergency_key"])
+        self.channel_salt = base64.b64decode(secrets["channel_salt"])
+
+        self.channel_keys = {}
+
+        for channel in secrets["channels"]:
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=16,
+                salt=self.channel_salt,
+                iterations=100000,
+            )
+
+            self.channel_keys[channel] = kdf.derive(channel.to_bytes(4, byteorder='big'))
+
+
 
     def encode(self, channel: int, frame: bytes, timestamp: int) -> bytes:
         """The frame encoder function
@@ -67,7 +75,7 @@ class Encoder:
         :returns: The encoded frame, which will be sent to the Decoder
         """
 
-        channel_key = self.emergency_key if channel == 0 else get_channel_session_key(channel)
+        channel_key = self.emergency_key if channel == 0 else self.channel_keys[channel]
 
         iv = os.urandom(16) # Initialization vector introduces randomness
 

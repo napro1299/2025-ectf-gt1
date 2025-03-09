@@ -339,7 +339,7 @@ int check_subscription(channel_id_t channel, unix_time_t *time) {
         return 0;
     }
 
-    return *time < channel_status->start_timestamp || *time > channel_status->end_timestamp;
+    return *time >= channel_status->start_timestamp && *time <= channel_status->end_timestamp;
 }
 
 /** @brief Processes a packet containing frame data.

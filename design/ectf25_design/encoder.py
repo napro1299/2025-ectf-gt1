@@ -73,10 +73,8 @@ class Encoder:
 
         aes_cipher = Cipher(algorithms.AES(channel_key), modes.CBC(iv))
 
-        unix_time = int(time.time())
-
         # timestamp + unix time + frame
-        frame_data = struct.pack("<QQ", timestamp, unix_time) + frame
+        frame_data = struct.pack("<Q", timestamp) + frame
 
         # Pad to make data multiple of 16 bytes (block size)
         padder = padding.PKCS7(128).padder()

@@ -37,7 +37,6 @@
  * Primitive types
  */
 #define timestamp_t uint64_t
-#define unix_time_t uint64_t
 #define channel_id_t uint32_t
 #define decoder_id_t uint32_t
 #define pkt_len_t uint16_t
@@ -86,7 +85,6 @@ typedef struct {
 
 typedef struct {
     timestamp_t timestamp;
-    unix_time_t unix_time;
     uint8_t data[FRAME_SIZE];
     char padding[8];
 } frame_packet_payload_t;
@@ -188,6 +186,15 @@ int is_subscribed(channel_id_t channel) {
     // Check if the decoder has has a subscription
     for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
         if (decoder_status.subscribed_channels[i].id == channel && decoder_status.subscribed_channels[i].active) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int is_valid_channel(channel_id_t channel) {
+    for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
+        if (secrets.channels[i] == channel) {
             return 1;
         }
     }
@@ -298,6 +305,13 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
         return -1;
     }
 
+    if (!is_valid_channel(payload.channel)) {
+        ZERO_PRIVATES();
+        STATUS_LED_RED();
+        print_error("Failed to update subscription - invalid channel\n");
+        return -1;
+    }
+
     // Find the first empty slot in the subscription array
     for (i = 0; i < MAX_CHANNEL_COUNT; i++) {
         if (decoder_status.subscribed_channels[i].id == payload.channel || !decoder_status.subscribed_channels[i].active) {
@@ -332,7 +346,7 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
 /**
  * Verify subscription time window
  */
-int check_subscription(channel_id_t channel, unix_time_t *time) {
+int check_subscription(channel_id_t channel, timestamp_t *time) {
     channel_status_t *channel_status = find_subscription(channel);
 
     if (channel_status == NULL) {
@@ -411,7 +425,7 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
             return -1;
         }
 
-        if (!check_subscription(channel, &payload.unix_time)) {
+        if (!check_subscription(channel, &payload.timestamp)) {
             STATUS_LED_RED();
             print_error("Failed to decode - subscription expired\n");
             return -1;
@@ -454,7 +468,7 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
         // Sanity check to check if timestamps working
         print_debug("Subscription and ordering valid\n");
 
-        int body_non_frame = sizeof(timestamp_t) + sizeof(unix_time_t);
+        int body_non_frame = sizeof(timestamp_t);
         write_packet(DECODE_MSG, payload.data + body_non_frame, pt_len - body_non_frame);
         return 0;
     } else {

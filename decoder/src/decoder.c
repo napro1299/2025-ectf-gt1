@@ -37,6 +37,7 @@
  * Primitive types
  */
 #define timestamp_t uint64_t
+#define unix_time_t uint64_t
 #define channel_id_t uint32_t
 #define decoder_id_t uint32_t
 #define pkt_len_t uint16_t
@@ -85,6 +86,7 @@ typedef struct {
 
 typedef struct {
     timestamp_t timestamp;
+    unix_time_t unix_time;
     uint8_t data[FRAME_SIZE];
     char padding[8];
 } frame_packet_payload_t;
@@ -131,8 +133,10 @@ typedef struct {
  */
 
 typedef struct {
+    uint32_t channels[MAX_CHANNEL_COUNT];
     uint8_t subupdate_salt[16];
     uint8_t hmac_auth_key[32];
+    uint8_t emergency_key[16];
 } secrets_t;
 
 typedef struct {
@@ -161,8 +165,10 @@ static timestamp_t last_frame_timestamps[MAX_CHANNEL_COUNT] = {0};
 
 // The global secrets
 static const secrets_t secrets = {
+    .channels = SECRET_CHANNELS,
     .subupdate_salt = SECRET_SUBUPDATE_SALT,
     .hmac_auth_key = SECRET_HMAC_AUTH_KEY,
+    .emergency_key = SECRET_EMERGENCY_KEY,
 };
 
 /**
@@ -186,6 +192,18 @@ int is_subscribed(channel_id_t channel) {
         }
     }
     return 0;
+}
+
+/**
+ * returns pointer to subscription, or NULL if not found
+ */
+channel_status_t *find_subscription(channel_id_t channel) {
+    for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
+        if (decoder_status.subscribed_channels[i].id == channel && decoder_status.subscribed_channels[i].active) {
+            return &decoder_status.subscribed_channels[i];
+        }
+    }
+    return NULL;
 }
 
 
@@ -234,8 +252,6 @@ int list_channels() {
 int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update) {
     int i;
 
-    hmac_sig_t hmac_sig = update->hmac_signature;
-    enc_body_t enc_body = update->encrypted_body;
     int hmac_status = hmac_verify(update->encrypted_data, sizeof(update->encrypted_data), update->hmac_signature.bytes, secrets.hmac_auth_key, sizeof(secrets.hmac_auth_key));
     
     if (hmac_status != 0) {
@@ -263,9 +279,19 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
 
     // Decrypt the sub update
     int payload_size;
-    decrypt_cbc_sym(update->encrypted_data, sizeof(subscription_update_payload_t), subupdate_key, update->iv.bytes, (uint8_t *)&payload, &payload_size);
+    int result = decrypt_cbc_sym(update->encrypted_data, sizeof(subscription_update_payload_t), subupdate_key, update->iv.bytes, (uint8_t *)&payload, &payload_size);
 
-    if (payload->channel == EMERGENCY_CHANNEL) {
+    if (result != 0) {
+        ZERO_PRIVATES();
+        STATUS_LED_RED();
+        // TODO: Could possibly lead to padding oracle attack - NEVER return whether padding failed.
+        // However, they can still see how long it takes and determine if it was padding failure
+        // But this might not be a problem since our messages have MACs, e.g. MAC fails first
+        print_error("Failed to update subscription - decryption failed\n");
+        return -1;
+    }
+
+    if (payload.channel == EMERGENCY_CHANNEL) {
         ZERO_PRIVATES();
         STATUS_LED_RED();
         print_error("Failed to update subscription - cannot subscribe to emergency channel\n");
@@ -274,12 +300,12 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
 
     // Find the first empty slot in the subscription array
     for (i = 0; i < MAX_CHANNEL_COUNT; i++) {
-        if (decoder_status.subscribed_channels[i].id == payload->channel || !decoder_status.subscribed_channels[i].active) {
-            decoder_status.subscribed_channels[i].id = payload->channel;
-            decoder_status.subscribed_channels[i].start_timestamp = payload->start;
-            decoder_status.subscribed_channels[i].end_timestamp = payload->end;
+        if (decoder_status.subscribed_channels[i].id == payload.channel || !decoder_status.subscribed_channels[i].active) {
+            decoder_status.subscribed_channels[i].id = payload.channel;
+            decoder_status.subscribed_channels[i].start_timestamp = payload.start;
+            decoder_status.subscribed_channels[i].end_timestamp = payload.end;
             decoder_status.subscribed_channels[i].active = true;
-            decoder_status.subscribed_channels[i].key = payload->channel_key;
+            decoder_status.subscribed_channels[i].key = payload.channel_key;
 
             break;
         }
@@ -303,6 +329,19 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
     return 0;
 }
 
+/**
+ * Verify subscription time window
+ */
+int check_subscription(channel_id_t channel, unix_time_t *time) {
+    channel_status_t *channel_status = find_subscription(channel);
+
+    if (channel_status == NULL) {
+        return 0;
+    }
+
+    return *time < channel_status->start_timestamp || *time > channel_status->end_timestamp;
+}
+
 /** @brief Processes a packet containing frame data.
  *
  *  @param pkt_len A pointer to the incoming packet.
@@ -312,12 +351,15 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
 */
 int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
     char output_buf[128] = {0};
-    uint16_t frame_size;
+    uint16_t payload_size;
     channel_id_t channel;
+    frame_packet_payload_t payload;
 
     // Frame size is the size of the packet minus the size of non-frame elements
-    frame_size = pkt_len - (sizeof(new_frame->channel) + sizeof(new_frame->timestamp));
+    payload_size = pkt_len - (sizeof(new_frame->channel) + sizeof(new_frame->hmac_signature) + sizeof(new_frame->iv));
     channel = new_frame->channel;
+
+    // TODO: make sure frame size is not larger than max value of 64 bytes + other stuff
 
     // Check that we are subscribed to the channel...
     print_debug("Checking subscription\n");
@@ -325,58 +367,95 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
         print_debug("Subscription Valid\n");
         /* The reference design doesn't need any extra work to decode, but your design likely will.
          *  Do any extra decoding here before returning the result to the host. */
+        
+        int result;
+        int hmac_status = hmac_verify(new_frame->encrypted_data, sizeof(new_frame->encrypted_data), new_frame->hmac_signature.bytes, secrets.hmac_auth_key, sizeof(secrets.hmac_auth_key));
+        
+        if (hmac_status != 0) {
+            STATUS_LED_RED();
+            print_error("Failed to decode - HMAC verification failed\n");
+            return -1;
+        }
+
+        // pt_len is the length of the decrypted payload
+        int pt_len;
+
+        channel_key_t key;
+        if (channel == EMERGENCY_CHANNEL) {
+            key = (channel_key_t) {
+                .bytes = secrets.emergency_key
+            };
+        } else {
+            channel_status_t *channel_status = find_subscription(channel);
+            if (channel_status == NULL) {
+                STATUS_LED_RED();
+                print_error("Failed to decode - channel not found\n");
+                return -1;
+            }
+            key = channel_status->key;
+        }
+
+        result = decrypt_cbc_sym(
+            new_frame->encrypted_data,
+            payload_size, 
+            key.bytes, 
+            new_frame->iv.bytes, 
+            (uint8_t *)&payload, 
+            &pt_len
+        );
+
+        if (result != 0) {
+            STATUS_LED_RED();
+            // TODO: Could possibly lead to padding oracle attack
+            print_error("Failed to decode - decryption failed\n");
+            return -1;
+        }
+
+        if (!check_subscription(channel, &payload.unix_time)) {
+            STATUS_LED_RED();
+            print_error("Failed to decode - subscription expired\n");
+            return -1;
+        }
 
         // for emergency channels
         // also makes sure to enforce monotonically increasing timestamps
         if (channel == EMERGENCY_CHANNEL) {
             // if timestamp <= last_emergency_timestamp, then return with an error
-            if (timestamp <= last_emergency_timestamp) {
-                print_error("Rejected emergency channel frame: timestamp not strictly increasing\n")
+            if (payload.timestamp <= last_emergency_timestamp) {
+                print_error("Rejected emergency channel frame: timestamp not strictly increasing\n");
                 return -1;
             }   
             // else, update the emergency channel's last timestamp
-            last_emergency_timestamp = timestamp;
+            last_emergency_timestamp = payload.timestamp;
         } else {
             // for non-emergency channels
             // find index in the subscription array
-            int channel_index = -1;
-            for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
-                if (decoder_status.subscribed_channels[i].active && decoder_status.subscribed_channels[i].id == channel) {
-                    channel_index = i;
+            int id;
+            for (id = 0; id < MAX_CHANNEL_COUNT; id++) {
+                if (decoder_status.subscribed_channels[id].active && decoder_status.subscribed_channels[id].id == channel) {
                     break;
                 }
             }
             // returns error if there isnt a valid subscription for the channel
-            if (channel_index == -1) {
+            if (find_subscription(channel) == NULL) {
+                STATUS_LED_RED();
                 print_error("Subscription not found for channel\n");
                 return -1;
             }
 
-            // check if frame timestamp is within the subscription window
-            timestamp_t subscription_start = decoder_status.subscribed_channels[channel_index].start_timestamp;
-            timestamp_t subscription_end = decoder_status.subscribed_channels[channel_index].end_timestamp;
-            if (timestamp < subscription_start || timestamp > subscription_end) {
-                sprintf(
-                    output_buf,
-                    "Frame timestamp is outside of the subscription window.",
-                    timestamp, subscription_start, subscription_end);
-                print_error(output_buf);
-                return -1;
-            }
             // enforce strictly monotonically increasing timestamps
-            if (timestamp <= last_frame_timestamps[channel_index]) {
-                sprintf(output_buf,
-                        "Frame rejected: timestamp is not increasing",
-                        channel, timestamp, last_frame_timestamps[channel_index]);
-                print_error(output_buf);
+            if (payload.timestamp <= last_frame_timestamps[id]) {
+                STATUS_LED_RED();
+                print_error("Rejected frame: timestamp not strictly increasing\n");
                 return -1;
             }
-            last_frame_timestamps[channel_index] = timestamp;
+            last_frame_timestamps[id] = payload.timestamp;
         }
         // Sanity check to check if timestamps working
-        print_debug("Subscription and ordering valid\n")
+        print_debug("Subscription and ordering valid\n");
 
-        write_packet(DECODE_MSG, new_frame->data, frame_size);
+        int body_non_frame = sizeof(timestamp_t) + sizeof(unix_time_t);
+        write_packet(DECODE_MSG, payload.data + body_non_frame, pt_len - body_non_frame);
         return 0;
     } else {
         STATUS_LED_RED();
@@ -437,7 +516,7 @@ void init() {
 
 int main(void) {
     char output_buf[128] = {0};
-    uint8_t uart_buf[100];
+    uint8_t uart_buf[256]; // TODO: BUFFER OVERFLOW RISK
     msg_type_t cmd;
     int result;
     uint16_t pkt_len;

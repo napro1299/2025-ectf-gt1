@@ -14,6 +14,7 @@ import argparse
 import struct
 import json
 import os
+import time
 import base64
 
 from cryptography.hazmat.primitives import hashes
@@ -22,8 +23,6 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives import hashes, hmac
 
 channel_session_keys = {}
-
-CHANNEL_SESSION_LIFETIME = 30 # seconds
 
 def get_channel_session_key(channel: int) -> bytes:
     if channel not in channel_session_keys or channel_session_keys[channel] is None:
@@ -47,6 +46,7 @@ class Encoder:
 
         self.hmac_auth_key = base64.b64decode(secrets["hmac_auth_key"])
         self.subupdate_salt = base64.b64decode(secrets["subupdate_salt"])
+        self.emergency_key = base64.b64decode(secrets["emergency_key"])
 
     def encode(self, channel: int, frame: bytes, timestamp: int) -> bytes:
         """The frame encoder function
@@ -67,14 +67,16 @@ class Encoder:
         :returns: The encoded frame, which will be sent to the Decoder
         """
 
-        channel_key = get_channel_session_key(channel)
+        channel_key = self.emergency_key if channel == 0 else get_channel_session_key(channel)
 
         iv = os.urandom(16) # Initialization vector introduces randomness
 
         aes_cipher = Cipher(algorithms.AES(channel_key), modes.CBC(iv))
 
-        # timestamp + frame
-        frame_data = struct.pack("<Q", timestamp) + frame
+        unix_time = int(time.time())
+
+        # timestamp + unix time + frame
+        frame_data = struct.pack("<QQ", timestamp, unix_time) + frame
 
         # Pad to make data multiple of 16 bytes (block size)
         padder = padding.PKCS7(128).padder()

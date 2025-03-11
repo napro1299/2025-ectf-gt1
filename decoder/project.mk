@@ -13,7 +13,9 @@
 
 # Add your config here!
 
-GLOBAL_SECRET := ../global.secrets/secrets.json
+GLOBAL_SECRET_DIR := ../global.secrets
+
+GLOBAL_SECRET := $(GLOBAL_SECRET_DIR)/$(firstword $(notdir $(wildcard $(GLOBAL_SECRET_DIR)/*)))
 
 GLOBAL_SECRETS_CHANNELS := $(shell python3 -c 'import json; print("{" + ", ".join(map(str, json.load(open("$(GLOBAL_SECRET)"))["channels"])) + "}")')
 GLOBAL_SECRETS_SUBUPDATE_SALT := $(shell python3 -c 'import json; print(json.load(open("$(GLOBAL_SECRET)"))["subupdate_salt"])')

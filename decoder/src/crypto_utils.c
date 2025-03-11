@@ -15,34 +15,37 @@
  * 
  * e.g. MESSAGE\x03\x03\x03
  */
-static int pkcs7_unpad(uint8_t *in, int *len) {
-    int pad_val = in[*len - 1];
+static int pkcs7_unpad(uint8_t *in, size_t len, int *pt_len) {
+    int pad_val = in[len - 1];
 
     if (pad_val < 1 || pad_val > AES_BLOCK_SIZE) 
         return -1;
 
     for (int i = 0; i < pad_val; i++) {
-        if (in[*len - 1 - i] != pad_val) {
+        if (in[len - 1 - i] != pad_val) {
             return -1;
         }
     }
 
-    *len -= pad_val;
+    *pt_len = len - pad_val;
     return 0;
 }
 
-int encrypt_cbc_sym(uint8_t *plaintext, size_t len, uint8_t *key, uint8_t *iv, uint8_t *ciphertext) {
+int encrypt_cbc_sym(uint8_t *plaintext, size_t len, uint8_t *key, int key_size, uint8_t *iv, uint8_t *ciphertext) {
     Aes aes;
     int result;
 
     if (len <= 0)
         return -1;
 
+    if (key_size != AES128 && key_size != AES256)
+        return -1;
+
     // Init Aes ctx
     wc_AesInit(&aes, NULL, INVALID_DEVID);
 
     // Set Aes key
-    result = wc_AesSetKey(&aes, key, AES_128_KEY_SIZE, iv, AES_ENCRYPTION);
+    result = wc_AesSetKey(&aes, key, key_size, iv, AES_ENCRYPTION);
     if (result != 0)
         return result;
 
@@ -58,18 +61,21 @@ int encrypt_cbc_sym(uint8_t *plaintext, size_t len, uint8_t *key, uint8_t *iv, u
     return wc_AesCbcEncrypt(&aes, ciphertext, padded_pt, padded_pt_size);
 }
 
-int decrypt_cbc_sym(uint8_t *ciphertext, size_t len, uint8_t *key, uint8_t *iv, uint8_t *plaintext, int *pt_len) {
+int decrypt_cbc_sym(uint8_t *ciphertext, size_t len, uint8_t *key, int key_size, uint8_t *iv, uint8_t *plaintext, int *pt_len) {
     Aes aes;
     int result;
 
     if (len <= 0)
         return -1;
 
+    if (key_size != AES128 && key_size != AES256)
+        return -1;
+
     // Init Aes ctx
     wc_AesInit(&aes, NULL, INVALID_DEVID);
 
     // Set Aes key
-    result = wc_AesSetKey(&aes, key, AES_128_KEY_SIZE, iv, AES_DECRYPTION);
+    result = wc_AesSetKey(&aes, key, key_size, iv, AES_DECRYPTION);
     if (result != 0)
         return 1;
 
@@ -78,7 +84,7 @@ int decrypt_cbc_sym(uint8_t *ciphertext, size_t len, uint8_t *key, uint8_t *iv, 
         return 2;
 
     // Remove padding
-    result = pkcs7_unpad(plaintext, pt_len);
+    result = pkcs7_unpad(plaintext, len, pt_len);
     if (result != 0) 
         return 3;
 

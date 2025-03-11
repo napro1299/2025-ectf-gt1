@@ -52,7 +52,7 @@ class Encoder:
                 iterations=100000,
             )
 
-            self.channel_keys[channel] = kdf.derive(channel.to_bytes(4, byteorder='big'))
+            self.channel_keys[channel] = kdf.derive(channel.to_bytes(4, byteorder='little'))
 
 
 

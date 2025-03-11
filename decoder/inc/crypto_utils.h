@@ -10,6 +10,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define AES128 16
+#define AES256 32
+
 /**
  * Encrypt with AES-128-CBC.
  * 
@@ -17,12 +20,12 @@
  * 
  * @return 0 on success
  */
-int encrypt_cbc_sym(uint8_t *plaintext, size_t len, uint8_t *key, uint8_t *iv, uint8_t *ciphertext);
+int encrypt_cbc_sym(uint8_t *plaintext, size_t len, uint8_t *key, int key_size, uint8_t *iv, uint8_t *ciphertext);
 
 /**
  * pt_len is length of plaintext - padding
  */
-int decrypt_cbc_sym(uint8_t *ciphertext, size_t len, uint8_t *key, uint8_t *iv, uint8_t *plaintext, int *pt_len);
+int decrypt_cbc_sym(uint8_t *ciphertext, size_t len, uint8_t *key, int key_size, uint8_t *iv, uint8_t *plaintext, int *pt_len);
 
 void sha256_hash(uint8_t *in, size_t len, uint8_t *digest);
 

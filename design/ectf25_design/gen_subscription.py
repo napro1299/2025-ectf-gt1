@@ -59,12 +59,12 @@ def gen_subscription(
         iterations=100000,
     )
 
-    channel_key = kdf.derive(channel.to_bytes(4, byteorder='big'))
+    channel_key = kdf.derive(channel.to_bytes(4, byteorder='little'))
     
     # Make subupdate key: hash(decoder_id + salt)
     def make_subupdate_key(decoder_id: int):
-        prehash = decoder_id.to_bytes(4, 'big') + subupdate_salt
-        
+        prehash = decoder_id.to_bytes(4, 'little') + subupdate_salt
+
         hasher = hashes.Hash(hashes.SHA256())        
         hasher.update(prehash)
 
@@ -82,9 +82,11 @@ def gen_subscription(
     body = struct.pack("<IQQI", device_id, start, end, channel)
     body = body + channel_key
 
+
     # Pad to make data multiple of 16 bytes (block size)
     padder = padding.PKCS7(128).padder()
     padded_body = padder.update(body) + padder.finalize()
+
 
     # Encrypt padded data
     encryptor = aes_cipher.encryptor()

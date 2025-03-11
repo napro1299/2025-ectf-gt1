@@ -33,6 +33,10 @@
 
 #define DEVICE_ID ((decoder_id_t) DECODER_ID)
 
+#define EMERGENCY_RECEIVED (0xff)
+#define CHANNEL_RECEIVED(status, c) ((status & (1U << c)) != 0)
+#define SET_CHANNEL_RECEIVED(status, c) (status |= (1U << c))
+
 /**
  * Primitive types
  */
@@ -161,6 +165,10 @@ static timestamp_t last_emergency_timestamp = 0;
 // This holds the last timestamp for each channel. 
 static timestamp_t last_frame_timestamps[MAX_CHANNEL_COUNT] = {0};
 
+// Bitfield to track if a frame has been received for each channel
+// has_received_frame[0] is normal channels, has_received_frame[1] is emergency channel
+static char has_received_frame[2] = {0};
+
 // The global secrets
 static const secrets_t secrets = {
     .channels = SECRET_CHANNELS,
@@ -278,6 +286,7 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
     memset(&payload, 0, sizeof(subscription_update_payload_t)); \
 } while (0)
 
+    
     ((decoder_id_t *)prehash)[0] = DEVICE_ID;
     memcpy(prehash + sizeof(decoder_id_t), secrets.subupdate_salt, sizeof(secrets.subupdate_salt));
 
@@ -287,14 +296,11 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
 
     // Decrypt the sub update
     int payload_size;
-    int result = decrypt_cbc_sym(update->encrypted_data, sizeof(subscription_update_payload_t), subupdate_key, update->iv.bytes, (uint8_t *)&payload, &payload_size);
+    int result = decrypt_cbc_sym(update->encrypted_data, sizeof(subscription_update_payload_t), subupdate_key, AES256, update->iv.bytes, (uint8_t *)&payload, &payload_size);
 
     if (result != 0) {
         ZERO_PRIVATES();
         STATUS_LED_RED();
-        // TODO: Could possibly lead to padding oracle attack - NEVER return whether padding failed.
-        // However, they can still see how long it takes and determine if it was padding failure
-        // But this might not be a problem since our messages have MACs, e.g. MAC fails first
         sprintf(buf, "Failed to update subscription - decryption failed: %d\n", result);
         print_error(buf);
         return -1;
@@ -321,7 +327,7 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
             decoder_status.subscribed_channels[i].start_timestamp = payload.start;
             decoder_status.subscribed_channels[i].end_timestamp = payload.end;
             decoder_status.subscribed_channels[i].active = true;
-            decoder_status.subscribed_channels[i].key = payload.channel_key;
+            memcpy(decoder_status.subscribed_channels[i].key.bytes, payload.channel_key.bytes, sizeof(payload.channel_key.bytes));
 
             break;
         }
@@ -399,9 +405,7 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
 
         channel_key_t key;
         if (channel == EMERGENCY_CHANNEL) {
-            key = (channel_key_t) {
-                .bytes = secrets.emergency_key
-            };
+            memcpy(&key.bytes, secrets.emergency_key, sizeof(secrets.emergency_key));
         } else {
             channel_status_t *channel_status = find_subscription(channel);
             if (channel_status == NULL) {
@@ -415,7 +419,8 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
         result = decrypt_cbc_sym(
             new_frame->encrypted_data,
             payload_size, 
-            key.bytes, 
+            key.bytes,
+            AES128,
             new_frame->iv.bytes, 
             (uint8_t *)&payload, 
             &pt_len
@@ -423,12 +428,12 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
 
         if (result != 0) {
             STATUS_LED_RED();
-            // TODO: Could possibly lead to padding oracle attack
-            print_error("Failed to decode - decryption failed\n");
+            sprintf(output_buf, "Failed to decode - decryption failed: %d\n", result);
+            print_error(output_buf);
             return -1;
         }
 
-        if (!check_subscription(channel, &payload.timestamp)) {
+        if (!check_subscription(channel, &payload.timestamp) && channel != EMERGENCY_CHANNEL) {
             STATUS_LED_RED();
             print_error("Failed to decode - subscription expired\n");
             return -1;
@@ -437,13 +442,14 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
         // for emergency channels
         // also makes sure to enforce monotonically increasing timestamps
         if (channel == EMERGENCY_CHANNEL) {
-            // if timestamp <= last_emergency_timestamp, then return with an error
-            if (payload.timestamp <= last_emergency_timestamp) {
+            
+            if (payload.timestamp <= last_emergency_timestamp && has_received_frame[1] == EMERGENCY_RECEIVED) {
                 print_error("Rejected emergency channel frame: timestamp not strictly increasing\n");
                 return -1;
             }   
             // else, update the emergency channel's last timestamp
             last_emergency_timestamp = payload.timestamp;
+            has_received_frame[1] = EMERGENCY_RECEIVED;
         } else {
             // for non-emergency channels
             // find index in the subscription array
@@ -461,18 +467,18 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
             }
 
             // enforce strictly monotonically increasing timestamps
-            if (payload.timestamp <= last_frame_timestamps[id]) {
+            if (payload.timestamp <= last_frame_timestamps[id] && CHANNEL_RECEIVED(has_received_frame[0], id)) {
                 STATUS_LED_RED();
                 print_error("Rejected frame: timestamp not strictly increasing\n");
                 return -1;
             }
             last_frame_timestamps[id] = payload.timestamp;
+            SET_CHANNEL_RECEIVED(has_received_frame[0], id);
         }
         // Sanity check to check if timestamps working
         print_debug("Subscription and ordering valid\n");
 
-        int body_non_frame = sizeof(timestamp_t);
-        write_packet(DECODE_MSG, payload.data + body_non_frame, pt_len - body_non_frame);
+        write_packet(DECODE_MSG, payload.data, pt_len - sizeof(timestamp_t));
         return 0;
     } else {
         STATUS_LED_RED();

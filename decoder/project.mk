@@ -35,6 +35,8 @@ PROJ_CFLAGS += -DHAVE_AES_KEYWRAP
 # Pass in decoder id
 PROJ_CFLAGS += -DDECODER_ID=$(DECODER_ID)
 
+PROJ_CFLAGS += -g
+
 inc/global.secrets: $(GLOBAL_SECRET)
 	@echo "Generating header global.secrets"
 	@echo "/* This file is auto-generated. Do not modify. */" > $@

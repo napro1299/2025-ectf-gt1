@@ -40,3 +40,22 @@ ENTRYPOINT ["bash", "-c", "make inc/global.secrets && make release DECODER_ID=${
 # Sample run command:
 # docker run --rm -v ./:/decoder -v ./../global.secrets:/global.secrets:ro -v ./build_out:/out -e DECODER_ID=0xdeadbeef decoder
 
+# venv
+# . ..\.venv\Scripts\Activate.ps1
+
+# windows
+# docker run --rm -v .\:/decoder -v .\..\global.secrets:/global.secrets:ro -v .\build_out:/out -e DECODER_ID=0xdeadbeef decoder
+
+#openocd
+# ./openocd.exe -s scripts/ -f interface/cmsis-dap.cfg -f target/max78000.cfg -c "bindto 0.0.0.0; init"
+
+# connect gdb
+# docker run --rm -it -p 3333:3333/tcp -v .\build_out:/out --workdir=/root --entrypoint /bin/bash decoder -c " cp -r /out/* /root/ && gdb-multiarch max78000.elf "
+
+# target remote host.docker.internal:3333
+
+# subscribe
+# python -m ectf25.tv.subscribe subscription.bin COM3
+
+#flash 
+# python -m ectf25.utils.flash .\build_out\max78000.bin COM3

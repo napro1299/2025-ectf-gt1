@@ -25,7 +25,7 @@
 #include "simple_uart.h"
 
 #include "crypto_utils.h"
-#include "global.secrets"
+#include "global.secrets.h"
 
 #ifndef DECODER_ID
 #error "DECODER_ID is not defined"

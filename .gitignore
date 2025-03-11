@@ -7,8 +7,8 @@
 !device/lib
 
 # Project specific
-global.secrets/
-decoder/inc/global.secrets
+decoder/global.secrets
+decoder/inc/global.secrets.h
 
 ## Begin Generic .gitignore ##
 

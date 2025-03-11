@@ -13,14 +13,12 @@
 
 # Add your config here!
 
-GLOBAL_SECRET_DIR := ../global.secrets
+GLOBAL_SECRETS := ../global.secrets
 
-GLOBAL_SECRET := $(GLOBAL_SECRET_DIR)/$(firstword $(notdir $(wildcard $(GLOBAL_SECRET_DIR)/*)))
-
-GLOBAL_SECRETS_CHANNELS := $(shell python3 -c 'import json; print("{" + ", ".join(map(str, json.load(open("$(GLOBAL_SECRET)"))["channels"])) + "}")')
-GLOBAL_SECRETS_SUBUPDATE_SALT := $(shell python3 -c 'import json; print(json.load(open("$(GLOBAL_SECRET)"))["subupdate_salt"])')
-GLOBAL_SECRETS_HMAC_AUTH_KEY := $(shell python3 -c 'import json; print(json.load(open("$(GLOBAL_SECRET)"))["hmac_auth_key"])')
-GLOBAL_SECRETS_EMERGENCY_KEY := $(shell python3 -c 'import json; print(json.load(open("$(GLOBAL_SECRET)"))["emergency_key"])')
+GLOBAL_SECRETS_CHANNELS := $(shell python3 -c 'import json; print("{" + ", ".join(map(str, json.load(open("$(GLOBAL_SECRETS)"))["channels"])) + "}")')
+GLOBAL_SECRETS_SUBUPDATE_SALT := $(shell python3 -c 'import json; print(json.load(open("$(GLOBAL_SECRETS)"))["subupdate_salt"])')
+GLOBAL_SECRETS_HMAC_AUTH_KEY := $(shell python3 -c 'import json; print(json.load(open("$(GLOBAL_SECRETS)"))["hmac_auth_key"])')
+GLOBAL_SECRETS_EMERGENCY_KEY := $(shell python3 -c 'import json; print(json.load(open("$(GLOBAL_SECRETS)"))["emergency_key"])')
 
 # Logging the secrets for debugging purposes (bad practice, but attackers wont have access)
 $(info GLOBAL_SECRETS_CHANNELS=$(GLOBAL_SECRETS_CHANNELS))
@@ -34,13 +32,10 @@ $(info DECODER_ID=$(DECODER_ID))
 PROJ_CFLAGS += -DHAVE_PKCS7
 PROJ_CFLAGS += -DHAVE_AES_KEYWRAP
 
-# Pass in decoder id
-PROJ_CFLAGS += -DDECODER_ID=$(DECODER_ID)
-
 PROJ_CFLAGS += -g
 
-inc/global.secrets: $(GLOBAL_SECRET)
-	@echo "Generating header global.secrets"
+inc/global.secrets.h: $(GLOBAL_SECRETS)
+	@echo "Generating header global.secrets.h"
 	@echo "/* This file is auto-generated. Do not modify. */" > $@
 	@echo "#ifndef GTONE_SECRET_H" >> $@
 	@echo "#define GTONE_SECRET_H" >> $@

@@ -301,8 +301,7 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
     if (result != 0) {
         ZERO_PRIVATES();
         STATUS_LED_RED();
-        sprintf(buf, "Failed to update subscription - decryption failed: %d\n", result);
-        print_error(buf);
+        print_error("Failed to update subscription - decryption failed\n");
         return -1;
     }
 
@@ -467,7 +466,8 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
             }
 
             // enforce strictly monotonically increasing timestamps
-            if (payload.timestamp <= last_frame_timestamps[id] && CHANNEL_RECEIVED(has_received_frame[0], id)) {
+            int channel_received = CHANNEL_RECEIVED(has_received_frame[0], id);
+            if (payload.timestamp <= last_frame_timestamps[id] && channel_received) {
                 STATUS_LED_RED();
                 print_error("Rejected frame: timestamp not strictly increasing\n");
                 return -1;

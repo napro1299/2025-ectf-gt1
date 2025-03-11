@@ -59,3 +59,6 @@ ENTRYPOINT ["bash", "-c", "make inc/global.secrets && make release DECODER_ID=${
 
 #flash 
 # python -m ectf25.utils.flash .\build_out\max78000.bin COM3
+
+# test
+# python -m ectf25.utils.tester --port COM3 -s .\global.secrets\secrets.json rand -c 1 -f 64

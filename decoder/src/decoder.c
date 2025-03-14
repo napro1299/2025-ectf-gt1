@@ -201,7 +201,7 @@ int is_subscribed(channel_id_t channel) {
 }
 
 int is_valid_channel(channel_id_t channel) {
-    for (int i = 0; i < MAX_CHANNEL_COUNT; i++) {
+    for (int i = 0; i < sizeof(secrets.channels); i++) {
         if (secrets.channels[i] == channel) {
             return 1;
         }

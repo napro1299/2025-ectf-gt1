@@ -77,16 +77,16 @@ int decrypt_cbc_sym(uint8_t *ciphertext, size_t len, uint8_t *key, int key_size,
     // Set Aes key
     result = wc_AesSetKey(&aes, key, key_size, iv, AES_DECRYPTION);
     if (result != 0)
-        return 1;
+        return -1;
 
     result = wc_AesCbcDecrypt(&aes, plaintext, ciphertext, len);
     if (result != 0) 
-        return 2;
+        return -1;
 
     // Remove padding
     result = pkcs7_unpad(plaintext, len, pt_len);
     if (result != 0) 
-        return 3;
+        return -1;
 
     return 0;
 }

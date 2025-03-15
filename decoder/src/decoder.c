@@ -34,6 +34,10 @@
 #define DEVICE_ID ((decoder_id_t) DECODER_ID)
 
 #define EMERGENCY_RECEIVED (0xff)
+
+/**
+ * Bit masking macros to modify and check the 8-bit channel status
+ */
 #define CHANNEL_RECEIVED(status, c) ((status & (1U << c)) != 0)
 #define SET_CHANNEL_RECEIVED(status, c) (status |= (1U << c))
 
@@ -266,7 +270,6 @@ int list_channels() {
 */
 int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update) {
     int i;
-    char buf[128] = {0};
 
     int hmac_status = hmac_verify(update->encrypted_data, sizeof(update->encrypted_data), update->hmac_signature.bytes, secrets.hmac_auth_key, sizeof(secrets.hmac_auth_key));
     if (hmac_status != 0) {
@@ -285,7 +288,6 @@ int update_subscription(pkt_len_t pkt_len, subscription_update_packet_t *update)
     memset(subupdate_key, 0, sizeof(subupdate_key)); \
     memset(&payload, 0, sizeof(subscription_update_payload_t)); \
 } while (0)
-
     
     ((decoder_id_t *)prehash)[0] = DEVICE_ID;
     memcpy(prehash + sizeof(decoder_id_t), secrets.subupdate_salt, sizeof(secrets.subupdate_salt));
@@ -377,6 +379,11 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
     channel_id_t channel;
     frame_packet_payload_t payload;
 
+#define ZERO_PRIVATES() do { \
+    payload_size = 0; \
+    memset(&payload, 0, sizeof(frame_packet_payload_t)); \
+} while (0)
+
     // Frame size is the size of the packet minus the size of non-frame elements
     payload_size = pkt_len - (sizeof(new_frame->channel) + sizeof(new_frame->hmac_signature) + sizeof(new_frame->iv));
     channel = new_frame->channel;
@@ -394,6 +401,7 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
         int hmac_status = hmac_verify(new_frame->encrypted_data, sizeof(new_frame->encrypted_data), new_frame->hmac_signature.bytes, secrets.hmac_auth_key, sizeof(secrets.hmac_auth_key));
         
         if (hmac_status != 0) {
+            ZERO_PRIVATES();
             STATUS_LED_RED();
             print_error("Failed to decode - HMAC verification failed\n");
             return -1;
@@ -408,6 +416,7 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
         } else {
             channel_status_t *channel_status = find_subscription(channel);
             if (channel_status == NULL) {
+                ZERO_PRIVATES();
                 STATUS_LED_RED();
                 print_error("Failed to decode - channel not found\n");
                 return -1;
@@ -426,13 +435,14 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
         );
 
         if (result != 0) {
+            ZERO_PRIVATES();
             STATUS_LED_RED();
-            sprintf(output_buf, "Failed to decode - decryption failed: %d\n", result);
-            print_error(output_buf);
+            print_error("Failed to decode - decryption failed\n");
             return -1;
         }
 
         if (!check_subscription(channel, &payload.timestamp) && channel != EMERGENCY_CHANNEL) {
+            ZERO_PRIVATES();
             STATUS_LED_RED();
             print_error("Failed to decode - subscription expired\n");
             return -1;
@@ -443,6 +453,7 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
         if (channel == EMERGENCY_CHANNEL) {
             
             if (payload.timestamp <= last_emergency_timestamp && has_received_frame[1] == EMERGENCY_RECEIVED) {
+                ZERO_PRIVATES();
                 print_error("Rejected emergency channel frame: timestamp not strictly increasing\n");
                 return -1;
             }   
@@ -460,6 +471,7 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
             }
             // returns error if there isnt a valid subscription for the channel
             if (find_subscription(channel) == NULL) {
+                ZERO_PRIVATES();
                 STATUS_LED_RED();
                 print_error("Subscription not found for channel\n");
                 return -1;
@@ -468,6 +480,7 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
             // enforce strictly monotonically increasing timestamps
             int channel_received = CHANNEL_RECEIVED(has_received_frame[0], id);
             if (payload.timestamp <= last_frame_timestamps[id] && channel_received) {
+                ZERO_PRIVATES();
                 STATUS_LED_RED();
                 print_error("Rejected frame: timestamp not strictly increasing\n");
                 return -1;
@@ -481,6 +494,7 @@ int decode(pkt_len_t pkt_len, frame_packet_t *new_frame) {
         write_packet(DECODE_MSG, payload.data, pt_len - sizeof(timestamp_t));
         return 0;
     } else {
+        ZERO_PRIVATES();
         STATUS_LED_RED();
         sprintf(
             output_buf,

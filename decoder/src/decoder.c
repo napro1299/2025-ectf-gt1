@@ -35,6 +35,8 @@
 
 #define EMERGENCY_RECEIVED (0xff)
 
+#define UART_BUF_MAX 256
+
 /**
  * Bit masking macros to modify and check the 8-bit channel status
  */
@@ -94,7 +96,7 @@ typedef struct {
 typedef struct {
     timestamp_t timestamp;
     uint8_t data[FRAME_SIZE];
-    char padding[8];
+    char padding[8]; // Expected padding bytes
 } frame_packet_payload_t;
 
 typedef struct {
@@ -553,7 +555,7 @@ void init() {
 
 int main(void) {
     char output_buf[128] = {0};
-    uint8_t uart_buf[256]; // TODO: BUFFER OVERFLOW RISK
+    uint8_t uart_buf[UART_BUF_MAX];
     msg_type_t cmd;
     int result;
     uint16_t pkt_len;

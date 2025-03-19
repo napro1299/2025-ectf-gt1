@@ -14,22 +14,6 @@
 #define AES256 32
 
 /**
- * @brief Encrypt with AES-128-CBC.
- * 
- * Data is padded with PKCS#7.
- * 
- * @param plaintext Pointer to the plaintext data to be encrypted.
- * @param len Length of the plaintext data.
- * @param key Pointer to the encryption key.
- * @param key_size Size of the encryption key (AES128 or AES256).
- * @param iv Pointer to the initialization vector.
- * @param ciphertext Pointer to the buffer where the encrypted data will be stored.
- * 
- * @return 0 on success
- */
-int encrypt_cbc_sym(uint8_t *plaintext, size_t len, uint8_t *key, int key_size, uint8_t *iv, uint8_t *ciphertext);
-
-/**
  * @brief Decrypt with AES-128-CBC.
  * 
  * @param ciphertext Pointer to the ciphertext data to be decrypted.

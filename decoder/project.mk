@@ -13,6 +13,8 @@
 
 # Add your config here!
 
+# NOTE: In order to build, global secrets must be generated as global.secrets in this directory
+
 GLOBAL_SECRETS := ../global.secrets
 
 GLOBAL_SECRETS_CHANNELS := $(shell python3 -c 'import json; print("{" + ", ".join(map(str, json.load(open("$(GLOBAL_SECRETS)"))["channels"])) + "}")')

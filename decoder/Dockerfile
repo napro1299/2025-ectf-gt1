@@ -62,3 +62,6 @@ ENTRYPOINT ["bash", "-c", "make inc/global.secrets.h && make release DECODER_ID=
 
 # test
 # python -m ectf25.utils.tester --port COM3 -s .\global.secrets\secrets.json rand -c 1 -f 64
+
+#gen sub
+# python -m ectf25_design.gen_subscription global.secrets ../subscription1.bin 0xDEADBEEF 0 18446744073709551615 1

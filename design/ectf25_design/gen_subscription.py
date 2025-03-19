@@ -25,10 +25,6 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-# Test: 
-# 
-# ../.venv/bin/python3.11 -m ectf25_design.gen_subscription ../global.secrets/secrets.json subscription.bin 0xdeadbeef 0 100 1 
-
 def gen_subscription(
     secrets: bytes, device_id: int, start: int, end: int, channel: int
 ) -> bytes:
@@ -42,9 +38,6 @@ def gen_subscription(
     :param end: Last timestamp the subscription is valid for
     :param channel: Channel to enable
     """
-    # TODO: Update this function to provide a Decoder with whatever data it needs to
-    #   subscribe to a new channel
-
     # Load the json of the secrets file
     secrets = json.loads(secrets)
 
@@ -82,11 +75,9 @@ def gen_subscription(
     body = struct.pack("<IQQI", device_id, start, end, channel)
     body = body + channel_key
 
-
     # Pad to make data multiple of 16 bytes (block size)
     padder = padding.PKCS7(128).padder()
     padded_body = padder.update(body) + padder.finalize()
-
 
     # Encrypt padded data
     encryptor = aes_cipher.encryptor()
@@ -98,10 +89,6 @@ def gen_subscription(
     h.update(encrypted_body)
 
     hmac_signature = h.finalize()
-
-    # print(f"HMAC: {hmac_signature.hex()}")
-    # print(f"IV: {iv.hex()}")
-    # print(f"Body: {encrypted_body.hex()}")
 
     return hmac_signature + iv + encrypted_body 
 

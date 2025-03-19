@@ -31,8 +31,6 @@ def gen_secrets(channels: list[int]) -> bytes | bytes:
 
     :returns: Contents of the secrets file
     """
-    # TODO: Update this function to generate any system-wide secrets needed by
-    #   your design
 
     # Create the secrets object
     # You can change this to generate any secret material
@@ -40,10 +38,10 @@ def gen_secrets(channels: list[int]) -> bytes | bytes:
 
     secrets_json = {
         "channels": channels,
-        "subupdate_salt": base64.b64encode(os.urandom(16)).decode(),   # 128-bit salt
-        "hmac_auth_key": base64.b64encode(os.urandom(32)).decode(),          # Shared MAC key for verifying authenticity
-        "emergency_key": base64.b64encode(os.urandom(16)).decode(),          # Key for emergency broadcast
-        "channel_salt": base64.b64encode(os.urandom(16)).decode()
+        "subupdate_salt": base64.b64encode(os.urandom(16)).decode(), # 16 byte salt for generating sub update symmetric key
+        "hmac_auth_key": base64.b64encode(os.urandom(32)).decode(),  # Shared MAC key for verifying authenticity
+        "emergency_key": base64.b64encode(os.urandom(16)).decode(),  # Key for emergency broadcast
+        "channel_salt": base64.b64encode(os.urandom(16)).decode()    # Salt for use in the KDF for generating channel keys (this is never passed to the decoder)
     }
 
     # NOTE: if you choose to use JSON for your file type, you will not be able to

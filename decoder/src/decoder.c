@@ -21,6 +21,7 @@
 #include "mxc_delay.h"
 #include "simple_flash.h"
 #include "host_messaging.h"
+#include "aes.h"
 
 #include "simple_uart.h"
 
@@ -522,6 +523,9 @@ void init() {
 
     // Initialize the flash peripheral to enable access to persistent memory
     flash_simple_init();
+
+    // Enable AES periph
+    MXC_AES_Init();
 
     // Read starting flash values into our flash status struct
     flash_simple_read(FLASH_STATUS_ADDR, &decoder_status, sizeof(flash_entry_t));

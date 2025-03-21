@@ -38,7 +38,7 @@ WORKDIR /decoder
 ENTRYPOINT ["bash", "-c", "make inc/global.secrets.h && make release DECODER_ID=${DECODER_ID} && cp build/max78000.elf build/max78000.bin /out"]
 
 # Sample run command:
-# docker run --rm -v ./:/decoder -v ./../global.secrets:/global.secrets:ro -v ./build_out:/out -e DECODER_ID=0xdeadbeef decoder
+# docker run --rm -v ./:/decoder -v ./global.secrets:/global.secrets:ro -v ./build_out:/out -e DECODER_ID=0xdeadbeef decoder
 
 # venv
 # . ..\.venv\Scripts\Activate.ps1
